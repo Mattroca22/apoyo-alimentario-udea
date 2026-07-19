@@ -1,0 +1,322 @@
+import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
+
+export default function App() {
+  const [formData, setFormData] = useState({
+    codigo_estudiantil: '',
+    numero_documento: '',
+    nombres: '',
+    apellidos: '',
+    carrera: '',
+    facultad: '',
+    estrato: '',
+    edad: '',
+    sexo_biologico: 'Masculino',
+    peso_kg: '',
+    talla_cm: '',
+    actividad_fisica: 'Moderado',
+    preferencia_dietaria: 'Omnívoro',
+    patologias: [],
+    alergias: [],
+    notas_practicante: ''
+  });
+
+  const [imc, setImc] = useState(0);
+  const [clasificacion, setClasificacion] = useState('Requiere datos');
+
+  const opcionesPatologias = ['Diabetes', 'Hipertensión', 'Gastritis'];
+  const opcionesAlergias = ['Gluten', 'Lactosa', 'Frutos Secos'];
+
+  // EFECTO 1: Calcular el IMC en tiempo real
+  useEffect(() => {
+    const peso = parseFloat(formData.peso_kg);
+    const tallaM = parseFloat(formData.talla_cm) / 100;
+
+    if (peso > 0 && tallaM > 0) {
+      const calculoImc = (peso / (tallaM * tallaM)).toFixed(2);
+      setImc(calculoImc);
+
+      if (calculoImc < 18.5) setClasificacion('Bajo peso');
+      else if (calculoImc >= 18.5 && calculoImc < 25) setClasificacion('Peso adecuado');
+      else if (calculoImc >= 25 && calculoImc < 30) setClasificacion('Sobrepeso');
+      else setClasificacion('Obesidad');
+    } else {
+      setImc(0);
+      setClasificacion('Requiere datos');
+    }
+  }, [formData.peso_kg, formData.talla_cm]);
+
+
+  // EFECTO 2: NUEVO BLOQUE — Autocompletar estudiante desde Supabase
+  useEffect(() => {
+    const buscarEstudiante = async () => {
+      // Se activa cuando el practicante digita un código de 5 o más caracteres
+      if (formData.codigo_estudiantil.trim().length >= 5) {
+        try {
+          const { data, error } = await supabase
+            .from('estudiantes')
+            .select('*')
+            .eq('codigo_estudiantil', formData.codigo_estudiantil.trim())
+            .maybeSingle(); // Trae un solo registro o null si no existe
+
+          if (data) {
+            // Si el estudiante ya existe en la base de datos, rellenamos sus campos fijos
+            setFormData(prev => ({
+              ...prev,
+              numero_documento: data.numero_documento || '',
+              nombres: data.nombres || '',
+              apellidos: data.apellidos || '',
+              carrera: data.carrera || '',
+              facultad: data.facultad || '',
+              estrato: data.estrato || ''
+            }));
+            console.log('Estudiante histórico detectado y cargado.');
+          }
+        } catch (err) {
+          console.error('Error al consultar estudiante:', err.message);
+        }
+      }
+    };
+
+    buscarEstudiante();
+  }, [formData.codigo_estudiantil]);
+
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
+  };
+
+  const handleArrayChange = (tipo, valor) => {
+    const listaActual = formData[tipo];
+    const nuevaLista = listaActual.includes(valor)
+      ? listaActual.filter(item => item !== valor)
+      : [...listaActual, valor];
+    setFormData({ ...formData, [tipo]: nuevaLista });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    const datosEstudiante = {
+      codigo_estudiantil: formData.codigo_estudiantil,
+      numero_documento: formData.numero_documento,
+      nombres: formData.nombres,
+      apellidos: formData.apellidos,
+      carrera: formData.carrera,
+      facultad: formData.facultad,
+      estrato: parseInt(formData.estrato, 10)
+    };
+
+    const datosValoracion = {
+      codigo_assistant_rel: formData.codigo_estudiantil, // Ajustado a la relación por código
+      codigo_estudiante: formData.codigo_estudiantil, 
+      edad: parseInt(formData.edad, 10),
+      sexo_biologico: formData.sexo_biologico,
+      peso_kg: parseFloat(formData.peso_kg),
+      talla_cm: parseFloat(formData.talla_cm),
+      imc: parseFloat(imc),
+      clasificacion_minsalud: clasificacion,
+      actividad_fisica: formData.actividad_fisica,
+      preferencia_dietaria: formData.preferencia_dietaria,
+      patologias: formData.patologias,
+      alergias: formData.alergias,
+      notas_practicante: formData.notas_practicante
+    };
+
+    try {
+      // Registrar o actualizar datos base del estudiante (UPSERT)
+      const { error: errorEstudiante } = await supabase
+        .from('estudiantes')
+        .upsert(datosEstudiante, { onConflict: 'codigo_estudiantil' });
+
+      if (errorEstudiante) throw errorEstudiante;
+
+      // Insertar la nueva valoración médica (INSERT)
+      const { error: errorValoracion } = await supabase
+        .from('valoraciones_nutricionales')
+        .insert([datosValoracion]);
+
+      if (errorValoracion) throw errorValoracion;
+
+      alert('¡Datos guardados con éxito en el sistema relacional!');
+      
+      // Limpiamos los campos médicos para el siguiente control, dejando el estudiante fijo
+      setFormData(prev => ({
+        ...prev,
+        edad: '',
+        peso_kg: '',
+        talla_cm: '',
+        patologias: [],
+        alergias: [],
+        notas_practicante: ''
+      }));
+
+    } catch (error) {
+      console.error('Error al guardar:', error.message);
+      alert('Error en la base de datos: ' + error.message);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#fcfaf7] p-6 flex items-center justify-center font-sans">
+      <div className="max-w-4xl w-full bg-white rounded-2xl shadow-xl border border-[#eaddcd] overflow-hidden">
+        
+        <div className="bg-[#135838] p-8 text-center md:text-left border-b-4 border-[#cda851]">
+          <h2 className="text-2xl md:text-3xl font-bold text-white tracking-wide">
+            Registro y Caracterización Nutricional
+          </h2>
+          <p className="text-[#e2f0d9] text-sm mt-1 font-medium">
+            Sistema de Apoyo Alimentario — Universidad de Antioquia
+          </p>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="p-8 space-y-6">
+          
+          {/* SECCIÓN 1: Identificación e Información Académica */}
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#135838] mb-3 border-b border-gray-100 pb-1">
+              Información Académica y Básica
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Código Estudiantil</label>
+                <input type="text" name="codigo_estudiantil" value={formData.codigo_estudiantil} required onChange={handleChange} className="w-full rounded-xl border border-gray-200 p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#135838] focus:outline-none transition-all" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Documento de Identidad</label>
+                <input type="text" name="numero_documento" value={formData.numero_documento} required onChange={handleChange} className="w-full rounded-xl border border-gray-200 p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#135838] focus:outline-none transition-all" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Estrato Socioeconómico</label>
+                <input type="number" name="estrato" value={formData.estrato} required onChange={handleChange} className="w-full rounded-xl border border-gray-200 p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#135838] focus:outline-none transition-all" />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Nombres Completos</label>
+              <input type="text" name="nombres" value={formData.nombres} required onChange={handleChange} className="w-full rounded-xl border border-gray-200 p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#135838] focus:outline-none transition-all" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Apellidos Completos</label>
+              <input type="text" name="apellidos" value={formData.apellidos} required onChange={handleChange} className="w-full rounded-xl border border-gray-200 p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#135838] focus:outline-none transition-all" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Carrera / Programa Académico</label>
+              <input type="text" name="carrera" value={formData.carrera} required onChange={handleChange} className="w-full rounded-xl border border-gray-200 p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#135838] focus:outline-none transition-all" placeholder="Ej. Ingeniería de Sistemas" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Facultad</label>
+              <input type="text" name="facultad" value={formData.facultad} required onChange={handleChange} className="w-full rounded-xl border border-gray-200 p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#135838] focus:outline-none transition-all" placeholder="Ej. Facultad de Ingeniería" />
+            </div>
+          </div>
+
+          {/* SECCIÓN 2: Métricas Antropométricas */}
+          <div className="bg-[#f4fbf7] p-6 rounded-2xl grid grid-cols-1 md:grid-cols-4 gap-4 border border-[#d2ecd9]">
+            <div>
+              <label className="block text-xs font-bold text-[#135838] mb-1">Edad</label>
+              <input type="number" name="edad" value={formData.edad} required onChange={handleChange} className="w-full rounded-xl border border-gray-200 p-3 bg-white focus:ring-2 focus:ring-[#135838] focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-[#135838] mb-1">Peso (kg)</label>
+              <input type="number" step="0.1" name="peso_kg" value={formData.peso_kg} required onChange={handleChange} className="w-full rounded-xl border border-gray-200 p-3 bg-white focus:ring-2 focus:ring-[#135838] focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-[#135838] mb-1">Estatura (cm)</label>
+              <input type="number" name="talla_cm" value={formData.talla_cm} required onChange={handleChange} className="w-full rounded-xl border border-gray-200 p-3 bg-white focus:ring-2 focus:ring-[#135838] focus:outline-none" />
+            </div>
+            <div className="flex flex-col justify-center items-center bg-white p-3 rounded-xl border-2 border-[#cda851] shadow-sm">
+              <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">IMC Calculado</span>
+              <span className="text-2xl font-black text-[#135838]">{imc}</span>
+              <span className="text-[10px] font-bold bg-[#135838] text-white px-2 py-0.5 rounded-full mt-1 uppercase tracking-wide">
+                {clasificacion}
+              </span>
+            </div>
+          </div>
+
+          {/* SECCIÓN 3: Estilo de Vida */}
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#135838] mb-3 border-b border-gray-100 pb-1">
+              Variables Clínicas y de Estilo de Vida
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Actividad Física</label>
+                <select name="actividad_fisica" value={formData.actividad_fisica} onChange={handleChange} className="w-full rounded-xl border border-gray-200 p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#135838] focus:outline-none transition-all">
+                  <option value="Sedentario">Sedentario / Ligero</option>
+                  <option value="Moderado">Moderado</option>
+                  <option value="Alto">Alto Rendimiento</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Preferencia Dietaria</label>
+                <select name="preferencia_dietaria" value={formData.preferencia_dietaria} onChange={handleChange} className="w-full rounded-xl border border-gray-200 p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#135838] focus:outline-none transition-all">
+                  <option value="Omnívoro">Omnívoro</option>
+                  <option value="Vegetariano">Vegetariano</option>
+                  <option value="Vegano">Vegano</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Sexo Biológico</label>
+                <select name="sexo_biologico" value={formData.sexo_biologico} onChange={handleChange} className="w-full rounded-xl border border-gray-200 p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#135838] focus:outline-none transition-all">
+                  <option value="Masculino">Masculino</option>
+                  <option value="Femenino">Femenino</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* SECCIÓN 4: Alergias y Patologías */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-gray-100 pt-5">
+            <div>
+              <span className="block text-xs font-bold text-gray-700 mb-2.5">Patologías / Diagnósticos</span>
+              <div className="flex flex-wrap gap-2">
+                {opcionesPatologias.map(pat => {
+                  const activo = formData.patologias.includes(pat.toLowerCase());
+                  return (
+                    <label key={pat} className={`inline-flex items-center border px-3 py-2 rounded-xl cursor-pointer text-sm transition-all ${activo ? 'bg-[#135838] text-white border-[#135838] font-medium' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                      <input type="checkbox" checked={activo} onChange={() => handleArrayChange('patologias', pat.toLowerCase())} className="sr-only" />
+                      <span>{pat}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <span className="block text-xs font-bold text-gray-700 mb-2.5">Alergias o Intolerancias</span>
+              <div className="flex flex-wrap gap-2">
+                {opcionesAlergias.map(al => {
+                  const activo = formData.alergias.includes(al.toLowerCase());
+                  return (
+                    <label key={al} className={`inline-flex items-center border px-3 py-2 rounded-xl cursor-pointer text-sm transition-all ${activo ? 'bg-[#cda851] text-white border-[#cda851] font-medium' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                      <input type="checkbox" checked={activo} onChange={() => handleArrayChange('alergias', al.toLowerCase())} className="sr-only" />
+                      <span>{al}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Notas Clínicas */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Notas u Observaciones del Practicante</label>
+            <textarea name="notas_practicante" value={formData.notas_practicante} onChange={handleChange} rows="3" className="w-full rounded-xl border border-gray-200 p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#135838] focus:outline-none transition-all" placeholder="Observaciones sobre la condición del estudiante..."></textarea>
+          </div>
+
+          <div className="pt-4">
+            <button type="submit" className="w-full bg-[#135838] hover:bg-[#0e442a] text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 transform active:scale-[0.98] tracking-wide text-sm cursor-pointer">
+              Guardar Registro e Iniciar Validación
+            </button>
+          </div>
+
+        </form>
+      </div>
+    </div>
+  );
+}
