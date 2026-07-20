@@ -1,22 +1,49 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
-serve(async (req) => {
-  const { datosClinicos } = await req.json()
-  
-  // Lógica de IA (Ejemplo con OpenAI)
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { 
-      "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      messages: [{ role: "system", content: "Eres un nutricionista clínico experto..." },
-                 { role: "user", content: `Analiza: ${JSON.stringify(datosClinicos)}` }]
-    })
-  })
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
 
-  const aiResult = await response.json()
-  return new Response(JSON.stringify(aiResult.choices[0].message.content), { headers: { "Content-Type": "application/json" } })
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+
+  try {
+    const body = await req.json();
+    const { datosClinicos } = body;
+    
+    if (!datosClinicos) throw new Error("No se recibieron datos clínicos");
+
+    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!apiKey) throw new Error("API Key de OpenAI no configurada");
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { 
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: "Eres un nutricionista clínico. Analiza: " + JSON.stringify(datosClinicos) + ". Responde solo en formato JSON con llaves 'diagnostico' y 'tratamiento'." },
+        ],
+        response_format: { type: "json_object" }
+      })
+    })
+
+    const aiResult = await response.json();
+    
+    // Verificar si OpenAI devolvió error
+    if (!aiResult.choices) throw new Error(JSON.stringify(aiResult.error || "Error desconocido en IA"));
+
+    return new Response(aiResult.choices[0].message.content, { 
+      headers: { ...corsHeaders, "Content-Type": "application/json" } 
+    })
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), { 
+      status: 400, 
+      headers: { ...corsHeaders, "Content-Type": "application/json" } 
+    })
+  }
 })
