@@ -21,7 +21,6 @@ export default function HistorialAsistencias() {
 
   const fetchAsistencias = async () => {
     setLoading(true);
-    // Consulta anidada incluyendo 'edad' para alimentar el histograma del dashboard
     const { data, error } = await supabase
       .from('asistencias')
       .select(`
@@ -31,6 +30,7 @@ export default function HistorialAsistencias() {
           apellidos, 
           facultad,
           valoraciones_nutricionales (
+            fecha_valoracion,
             clasificacion_minsalud,
             edad
           )
@@ -38,8 +38,15 @@ export default function HistorialAsistencias() {
       `)
       .order('fecha_hora', { ascending: false });
 
-    if (error) console.error("Error al traer datos:", error);
-    else setAsistencias(data || []);
+    if (error) {
+      console.error("Error al traer datos:", error);
+    } else {
+      // Eliminar registros duplicados exactos (mismo estudiante y misma fecha/hora)
+      const uniqueData = Array.from(
+        new Map((data || []).map(item => [`${item.codigo_estudiante}-${item.fecha_hora}`, item])).values()
+      );
+      setAsistencias(uniqueData);
+    }
     setLoading(false);
   };
 
@@ -58,16 +65,22 @@ export default function HistorialAsistencias() {
   const filteredAsistencias = asistencias.filter(item => {
     const matchesSearch = item.codigo_estudiante.toString().includes(searchTerm);
     
-    // Accedemos a la primera valoración si existe
-    const valoraciones = item.estudiantes?.valoraciones_nutricionales;
-    const clasificacion = valoraciones && valoraciones.length > 0 ? valoraciones[0].clasificacion_minsalud : '';
+    // Obtenemos las valoraciones y ordenamos para evaluar la más reciente
+    const valoraciones = item.estudiantes?.valoraciones_nutricionales || [];
+    const sortedVal = [...valoraciones].sort((a, b) => new Date(b.fecha_valoracion) - new Date(a.fecha_valoracion));
+    const ultimaClasificacion = sortedVal.length > 0 ? sortedVal[0].clasificacion_minsalud : '';
     
     const matchesAlert = isAlertMode 
-      ? (clasificacion.toLowerCase().includes('bajo') || clasificacion.toLowerCase().includes('sobre') || clasificacion.toLowerCase().includes('obesidad')) 
+      ? (ultimaClasificacion.toLowerCase().includes('bajo') || ultimaClasificacion.toLowerCase().includes('sobre') || ultimaClasificacion.toLowerCase().includes('obesidad')) 
       : true;
       
     return matchesSearch && matchesAlert;
   });
+
+  // Ordenar estrictamente por fecha descendente y tomar los 15 más recientes sin repetir
+  const limitedAsistencias = filteredAsistencias
+    .sort((a, b) => new Date(b.fecha_hora) - new Date(a.fecha_hora))
+    .slice(0, 15);
 
   const exportToExcel = async () => {
     if (!startDate || !endDate) return alert("Por favor selecciona ambas fechas");
@@ -123,13 +136,15 @@ export default function HistorialAsistencias() {
               </tr>
             </thead>
             <tbody>
-              {filteredAsistencias.map((item) => {
-                const val = item.estudiantes?.valoraciones_nutricionales;
-                const clasificacion = val && val.length > 0 ? val[0].clasificacion_minsalud : null;
+              {limitedAsistencias.map((item) => {
+                const valoraciones = item.estudiantes?.valoraciones_nutricionales || [];
+                // Ordenar las valoraciones por fecha descendente para obtener siempre la última real
+                const sortedVal = [...valoraciones].sort((a, b) => new Date(b.fecha_valoracion) - new Date(a.fecha_valoracion));
+                const clasificacion = sortedVal.length > 0 ? sortedVal[0].clasificacion_minsalud : null;
                 const status = getStatusIndicator(clasificacion);
 
                 return (
-                  <tr key={item.id} className="hover:bg-gray-50 border-b">
+                  <tr key={item.id || `${item.codigo_estudiante}-${item.fecha_hora}`} className="hover:bg-gray-50 border-b">
                     <td className="p-3">{item.codigo_estudiante}</td>
                     <td className="p-3">{item.estudiantes ? `${item.estudiantes.nombres} ${item.estudiantes.apellidos}` : 'N/A'}</td>
                     <td className="p-3 font-semibold">
