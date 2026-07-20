@@ -5,6 +5,27 @@ from datetime import datetime, timedelta
 nombres_list = ["Juan", "Maria", "Carlos", "Ana", "Luis", "Elena", "Pedro", "Sofia", "Jorge", "Lucia", "Andres", "Camila"]
 apellidos_list = ["Perez", "Gomez", "Rodriguez", "Lopez", "Martinez", "Hernandez", "Diaz", "Torres"]
 
+# Facultades reales de la Universidad de Antioquia para diversificar el gráfico de pastel
+FACULTADES = [
+    "Facultad de Ingeniería",
+    "Facultad de Medicina",
+    "Facultad de Ciencias Exactas y Naturales",
+    "Facultad de Ciencias Sociales y Humanas",
+    "Facultad de Ciencias Económicas",
+    "Facultad de Derecho y Ciencias Políticas",
+    "Facultad de Comunicaciones"
+]
+
+CARRERAS = {
+    "Facultad de Ingeniería": "Ingeniería de Sistemas",
+    "Facultad de Medicina": "Medicina",
+    "Facultad de Ciencias Exactas y Naturales": "Matemáticas",
+    "Facultad de Ciencias Sociales y Humanas": "Sociología",
+    "Facultad de Ciencias Económicas": "Administración de Empresas",
+    "Facultad de Derecho y Ciencias Políticas": "Derecho",
+    "Facultad de Comunicaciones": "Periodismo"
+}
+
 CLASIFICACIONES = ["Peso adecuado", "Sobrepeso", "Bajo peso", "Obesidad"]
 PESOS_CLASIFICACION = [0.60, 0.20, 0.10, 0.10]
 
@@ -24,6 +45,8 @@ for item in datos:
     if cod in procesados: continue
     
     edad_base = random.randint(17, 30)
+    facultad_elegida = random.choice(FACULTADES)
+    carrera_elegida = CARRERAS[facultad_elegida]
     
     # 1. Definir días de visita ÚNICOS (entre 2 y 5 días distintos en los últimos 30 días)
     num_dias_visita = random.randint(2, 5)
@@ -36,20 +59,19 @@ for item in datos:
 
     fecha_registro_inicial = fechas_visita[0].strftime('%Y-%m-%d %H:%M:%S+00')
 
-    # Estudiante
+    # Estudiante con facultad dinámica
     estudiantes_sql.append(
         f"INSERT INTO estudiantes (codigo_estudiantil, numero_documento, nombres, apellidos, carrera, facultad, estrato, huella_hash, estado_beneficio, fecha_registro, dias_beneficio) "
-        f"VALUES ('{cod}', '{random.randint(1000000000, 9999999999)}', '{random.choice(nombres_list)}', '{random.choice(apellidos_list)}', 'Ingeniería de Sistemas', 'Facultad de Ingeniería', {random.randint(1,4)}, 'hash_{cod}', true, '{fecha_registro_inicial}', ARRAY['Lunes', 'Miércoles']::text[]) "
+        f"VALUES ('{cod}', '{random.randint(1000000000, 9999999999)}', '{random.choice(nombres_list)}', '{random.choice(apellidos_list)}', '{carrera_elegida}', '{facultad_elegida}', {random.randint(1,4)}, 'hash_{cod}', true, '{fecha_registro_inicial}', ARRAY['Lunes', 'Miércoles']::text[]) "
         f"ON CONFLICT (codigo_estudiantil) DO NOTHING;"
     )
 
-    # 2. Asistencias (Garantizamos que sea una sola por fecha distinta)
+    # 2. Asistencias (Una sola por fecha distinta)
     for fecha in fechas_visita:
         fecha_str = fecha.strftime('%Y-%m-%d %H:%M:%S+00')
         asistencias_sql.append(f"INSERT INTO asistencias (codigo_estudiante, fecha_hora) VALUES ('{cod}', '{fecha_str}');")
 
-    # 3. Valoraciones Nutricionales (Múltiples registros en el tiempo para la evolución)
-    # Creamos de 2 a 3 valoraciones en diferentes momentos del mes
+    # 3. Valoraciones Nutricionales (Múltiples registros para evolución)
     dias_valoracion = sorted(list(set([dias_atras_seleccionados[0], dias_atras_seleccionados[-1]])), reverse=True)
     if len(dias_atras_seleccionados) > 2 and len(dias_valoracion) < 3:
         dias_valoracion.insert(1, dias_atras_seleccionados[len(dias_atras_seleccionados)//2])
@@ -73,4 +95,4 @@ for item in datos:
 with open('import_evolucion.sql', 'w', encoding='utf-8') as f:
     f.write("\n".join(estudiantes_sql) + "\n\n" + "\n".join(asistencias_sql) + "\n\n" + "\n".join(valoraciones_sql))
 
-print("¡Archivo 'import_evolucion.sql' generado correctamente!")
+print("¡Archivo 'import_evolucion.sql' generado con distribución multienfoque por facultad!")
