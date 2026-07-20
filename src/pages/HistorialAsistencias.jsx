@@ -21,7 +21,7 @@ export default function HistorialAsistencias() {
 
   const fetchAsistencias = async () => {
     setLoading(true);
-    // IMPORTANTE: Consulta anidada para traer la relación completa
+    // Consulta anidada incluyendo 'edad' para alimentar el histograma del dashboard
     const { data, error } = await supabase
       .from('asistencias')
       .select(`
@@ -31,7 +31,8 @@ export default function HistorialAsistencias() {
           apellidos, 
           facultad,
           valoraciones_nutricionales (
-            clasificacion_minsalud
+            clasificacion_minsalud,
+            edad
           )
         )
       `)
@@ -46,9 +47,10 @@ export default function HistorialAsistencias() {
   const getStatusIndicator = (clasificacion) => {
     if (!clasificacion) return { emoji: '⚪', label: 'Sin datos', color: 'text-gray-400' };
     const c = clasificacion.toLowerCase();
-    if (c.includes('normal')) return { emoji: '🟢', label: 'Normal', color: 'text-green-600' };
+    if (c.includes('normal') || c.includes('adecuado')) return { emoji: '🟢', label: 'Normal', color: 'text-green-600' };
     if (c.includes('sobre')) return { emoji: '🟡', label: 'Sobrepeso', color: 'text-yellow-600' };
     if (c.includes('bajo')) return { emoji: '🟠', label: 'Bajo peso', color: 'text-orange-600' };
+    if (c.includes('obesidad')) return { emoji: '🔴', label: 'Obesidad', color: 'text-red-600' };
     return { emoji: '⚪', label: clasificacion, color: 'text-gray-500' };
   };
 
@@ -61,7 +63,7 @@ export default function HistorialAsistencias() {
     const clasificacion = valoraciones && valoraciones.length > 0 ? valoraciones[0].clasificacion_minsalud : '';
     
     const matchesAlert = isAlertMode 
-      ? (clasificacion.toLowerCase().includes('bajo') || clasificacion.toLowerCase().includes('sobre')) 
+      ? (clasificacion.toLowerCase().includes('bajo') || clasificacion.toLowerCase().includes('sobre') || clasificacion.toLowerCase().includes('obesidad')) 
       : true;
       
     return matchesSearch && matchesAlert;
@@ -69,7 +71,6 @@ export default function HistorialAsistencias() {
 
   const exportToExcel = async () => {
     if (!startDate || !endDate) return alert("Por favor selecciona ambas fechas");
-    // (Lógica de exportación simplificada)
     const worksheet = XLSX.utils.json_to_sheet(asistencias.map(item => ({
       Codigo: item.codigo_estudiante,
       Estudiante: item.estudiantes ? `${item.estudiantes.nombres} ${item.estudiantes.apellidos}` : 'N/A',
@@ -123,7 +124,6 @@ export default function HistorialAsistencias() {
             </thead>
             <tbody>
               {filteredAsistencias.map((item) => {
-                // Obtenemos la clasificación de forma segura
                 const val = item.estudiantes?.valoraciones_nutricionales;
                 const clasificacion = val && val.length > 0 ? val[0].clasificacion_minsalud : null;
                 const status = getStatusIndicator(clasificacion);
