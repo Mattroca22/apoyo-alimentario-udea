@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
+// 1. IMPORTA EL COMPONENTE AQUÍ
+import AdminDashboard from '../components/AdminDashboard'; 
 
 export default function HistorialAsistencias() {
   const [asistencias, setAsistencias] = useState([]);
@@ -11,10 +13,9 @@ export default function HistorialAsistencias() {
 
   const fetchAsistencias = async () => {
     setLoading(true);
-    // Hacemos un join con la tabla 'estudiantes' para traer el nombre
     const { data, error } = await supabase
       .from('asistencias')
-      .select('*, estudiantes(nombres, apellidos)')
+      .select('*, estudiantes(nombres, apellidos, facultad)')
       .order('fecha_hora', { ascending: false });
 
     if (error) {
@@ -28,6 +29,9 @@ export default function HistorialAsistencias() {
   return (
     <div className="p-8 max-w-4xl mx-auto">
       <h2 className="text-2xl font-bold text-[#135838] mb-6">Historial de Entregas</h2>
+      
+      {/* 2. INSERTA EL DASHBOARD AQUÍ */}
+      {!loading && <AdminDashboard rawData={asistencias} />}
       
       {loading ? (
         <p>Cargando datos...</p>
