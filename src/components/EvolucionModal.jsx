@@ -10,32 +10,42 @@ export default function EvolucionModal({ codigoEstudiante, onClose }) {
         .from('valoraciones_nutricionales')
         .select('*')
         .eq('codigo_estudiante', codigoEstudiante)
-        .order('fecha_valoracion', { ascending: true }); // Ordenamos cronológicamente (antiguo -> nuevo)
+        .order('fecha_valoracion', { ascending: true }); // Orden cronológico (antiguo -> nuevo)
       
       setHistorial(data || []);
     };
     fetchHistorial();
   }, [codigoEstudiante]);
 
-  // LÓGICA DEL MOTOR DE TENDENCIAS
+  // LÓGICA DEL MOTOR DE TENDENCIAS CORREGIDA Y AMPLIADA
   const getTendencia = (actual, anterior, clasificacion) => {
     if (!anterior) return { color: 'text-gray-400', icon: '—', label: 'Inicio' };
     
     const pesoSubio = actual.peso_kg > anterior.peso_kg;
     const pesoBajo = actual.peso_kg < anterior.peso_kg;
-    const diag = clasificacion.toLowerCase();
+    const diag = (clasificacion || '').toLowerCase();
 
-    // Lógica: Sobrepeso (Objetivo: Bajar)
-    if (diag.includes('sobrepeso')) {
+    // 1. Sobrepeso u Obesidad (Objetivo clínico: Bajar de peso)
+    if (diag.includes('sobrepeso') || diag.includes('obesidad')) {
       if (pesoBajo) return { color: 'text-green-600', icon: '↓', label: 'Mejorando' };
       if (pesoSubio) return { color: 'text-red-600', icon: '↑', label: 'Alerta' };
     }
     
-    // Lógica: Bajo peso (Objetivo: Subir)
+    // 2. Bajo peso (Objetivo clínico: Subir de peso)
     if (diag.includes('bajo')) {
       if (pesoSubio) return { color: 'text-green-600', icon: '↑', label: 'Mejorando' };
       if (pesoBajo) return { color: 'text-red-600', icon: '↓', label: 'Alerta' };
     }
+
+    // 3. Peso adecuado / Normal (Objetivo clínico: Mantener)
+    if (diag.includes('normal') || diag.includes('adecuado')) {
+      if (pesoSubio) return { color: 'text-amber-600', icon: '↑', label: 'Aumento leve' };
+      if (pesoBajo) return { color: 'text-amber-600', icon: '↓', label: 'Descenso leve' };
+    }
+
+    // Comportamiento por defecto si varía el peso sin categoría estricta
+    if (pesoSubio) return { color: 'text-amber-600', icon: '↑', label: 'Aumento' };
+    if (pesoBajo) return { color: 'text-gray-600', icon: '↓', label: 'Disminución' };
 
     return { color: 'text-gray-500', icon: '•', label: 'Estable' };
   };
@@ -45,7 +55,7 @@ export default function EvolucionModal({ codigoEstudiante, onClose }) {
       <div className="bg-white p-6 rounded-lg w-full max-w-3xl shadow-xl">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold text-[#135838]">Seguimiento: Estudiante {codigoEstudiante}</h2>
-          <button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Cerrar</button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 font-semibold text-sm">Cerrar</button>
         </div>
         
         <div className="overflow-x-auto">
@@ -61,11 +71,11 @@ export default function EvolucionModal({ codigoEstudiante, onClose }) {
             </thead>
             <tbody>
               {historial.map((item, index) => {
-                const anterior = historial[index - 1]; // Comparar con el previo en el array ordenado
+                const anterior = historial[index - 1]; // Compara estrictamente con la valoración previa inmediata
                 const tendencia = getTendencia(item, anterior, item.clasificacion_minsalud);
                 
                 return (
-                  <tr key={item.id} className="border-b hover:bg-gray-50 text-sm">
+                  <tr key={item.id || index} className="border-b hover:bg-gray-50 text-sm">
                     <td className="p-3">{new Date(item.fecha_valoracion).toLocaleDateString()}</td>
                     <td className="p-3">{item.peso_kg} kg</td>
                     <td className="p-3 font-semibold text-gray-800">{item.imc || 'N/A'}</td>
